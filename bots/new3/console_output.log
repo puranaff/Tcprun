@@ -1,0 +1,85 @@
+
+============================================================
+Bot started at 2026-02-06 22:59:44.043563
+============================================================
+Exception in thread Thread-4 (sockf1):
+Traceback (most recent call last):
+  File "/data/data/com.termux/files/usr/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/data/data/com.termux/files/usr/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/storage/emulated/0/newmytcp/account/new3/app.py", line 1157, in sockf1
+    restart_program()
+  File "/storage/emulated/0/newmytcp/account/new3/app.py", line 592, in restart_program
+    connections = psutil.net_connections()
+                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/data/com.termux/files/usr/lib/python3.12/site-packages/psutil/__init__.py", line 2211, in net_connections
+    return _psplatform.net_connections(kind)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/data/com.termux/files/usr/lib/python3.12/site-packages/psutil/_pslinux.py", line 987, in net_connections
+    return _net_connections.retrieve(kind)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/data/com.termux/files/usr/lib/python3.12/site-packages/psutil/_pslinux.py", line 969, in retrieve
+    for fd, family, type_, laddr, raddr, status, bound_pid in ls:
+                                                              ^^
+  File "/data/data/com.termux/files/usr/lib/python3.12/site-packages/psutil/_pslinux.py", line 878, in process_inet
+    with open_text(file) as f:
+         ^^^^^^^^^^^^^^^
+  File "/data/data/com.termux/files/usr/lib/python3.12/site-packages/psutil/_common.py", line 774, in open_text
+    fobj = open(  # noqa: SIM115
+           ^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 13] Permission denied: '/proc/net/tcp'
+ERROR:root:Error occurred: 'access_token'
+Failed request with status code: 404
+ID: 4409337592, Password: hr_QBURZ_BY_SPIDEERIO_GAMING_T0ST1
+{'1': {'wire_type': 'varint', 'data': 14447391480}, '2': {'wire_type': 'varint', 'data': 1}, '3': {'wire_type': 'string', 'data': 'IND'}, '4': {'wire_type': 'string', 'data': 'hr⁰⁹⁶⁹⁹'}, '5': {'wire_type': 'varint', 'data': 1768596577}, '6': {'wire_type': 'varint', 'data': 2}, '7': {'wire_type': 'varint', 'data': 48}, '8': {'wire_type': 'varint', 'data': 2}, '14': {'wire_type': 'string', 'data': '202.81.108.100:39698'}, '15': {'wire_type': 'varint', 'data': 8}, '16': {'wire_type': 'string', 'data': 'https://indevent.ggblueshark.com/'}, '19': {'wire_type': 'length_delimited', 'data': {'1': {'wire_type': 'varint', 'data': 19}, '2': {'wire_type': 'string', 'data': 'SAC'}}}, '23': {'wire_type': 'varint', 'data': 1770398989}, '24': {'wire_type': 'string', 'data': 'IND'}, '26': {'wire_type': 'varint', 'data': 1}, '30': {'wire_type': 'varint', 'data': 1001000093}, '32': {'wire_type': 'string', 'data': '202.81.109.200:39800'}, '34': {'wire_type': 'length_delimited', 'data': {'2': {'wire_type': 'varint', 'data': 93}, '3': {'wire_type': 'varint', 'data': 1769884200}, '4': {'wire_type': 'varint', 'data': 1772303399}, '5': {'wire_type': 'varint', 'data': 1001000093}}}, '37': {'wire_type': 'varint', 'data': 1}, '39': {'wire_type': 'string', 'data': 'https://indnetwork.ggblueshark.com/'}, '42': {'wire_type': 'string', 'data': 'IN'}, '44': {'wire_type': 'length_delimited', 'data': {'1': {'wire_type': 'string', 'data': 'IND'}, '2': {'wire_type': 'string', 'data': 'IDC2'}, '3': {'wire_type': 'string', 'data': '103.123.54.165:10103'}, '6': {'wire_type': 'string', 'data': 'IND'}}}, '45': {'wire_type': 'varint', 'data': 1770398685}, '48': {'wire_type': 'length_delimited', 'data': {'1': {'wire_type': 'length_delimited', 'data': {'1': {'wire_type': 'varint', 'data': 1}, '2': {'wire_type': 'varint', 'data': 3}}}}}, '51': {'wire_type': 'varint', 'data': 1}, '52': {'wire_type': 'string', 'data': ''}, '62': {'wire_type': 'string', 'data': 'ff-sdk-grtc.freefireind.in;ff-dr-grtc.freefireind.in;103.16.33.136, 103.16.33.160'}, '63': {'wire_type': 'length_delimited', 'data': {'1': {'wire_type': 'varint', 'data': 1}, '2': {'wire_type': 'string', 'data': 'gin.freefireind.in'}, '3': {'wire_type': 'varint', 'data': 18446744073709551615}, '4': {'wire_type': 'varint', 'data': 1}, '5': {'wire_type': 'varint', 'data': 1}, '6': {'wire_type': 'string', 'data': '3|4294967295'}, '7': {'wire_type': 'varint', 'data': 1}, '8': {'wire_type': 'varint', 'data': 1}, '9': {'wire_type': 'varint', 'data': 1}}}, '65': {'wire_type': 'length_delimited', 'data': {'2': {'wire_type': 'varint', 'data': 1}, '3': {'wire_type': 'varint', 'data': 1}}}, '70': {'wire_type': 'string', 'data': ''}, '75': {'wire_type': 'varint', 'data': 1}, '77': {'wire_type': 'varint', 'data': 18446744073709551615}, '79': {'wire_type': 'string', 'data': 'https://indgigateway.ggblueshark.com/'}, '86': {'wire_type': 'string', 'data': ''}, '88': {'wire_type': 'string', 'data': 'a3c4386bf347355759423482eda7bfc1e4169e65'}, '89': {'wire_type': 'varint', 'data': 1770398989}, '96': {'wire_type': 'varint', 'data': 19800}}
+b'\x9a\xf6:_\xdasu\xf7\x12\x1c%\x08\x00"\x00 ' b'\xab\xceIQ\xfagw\xf6\x101%@\x10 \x00 '
+202.81.109.200 39800
+Token decoded and processed. Account ID: 14447391480
+Final token constructed successfully.
+ Con port 39698 Host 202.81.109.66 
+0115000000035d21b2f86986250d000003009b823a06e7511e2113d48dccb47f0fdfa88c9571bc86316931ad6d5371eaeb5cdf3c860d89736819047f6e34cf13893af2cc30306eeed37a8f3fe0b744c26a26718c5cf488e83d028267ed99fb1d11c9a063c2baf781f55adb1e98b585eddc683c8901893aef72dc0d06fdb3275338f48d5a279b540f23b27bbcb08fc14f8ec1111f55050ce2d47f49258051dbde26bf90bf111c37b80504559a1136abb76fb04313601f30498efdf1ad25dd89942a199f3428d3fbfdd44b62bec8b513a25c2ce16ae287e5338441409aa17759c2a8631c9179075bf4cdec63bc84e2bb121989e0e1026e93ab6ff467a0d5ea1c263a80911e305ab484ad85ef9539e8760a39e30cc20c14aad7f9c995508dd4d85abbaf65bac24601fe53f9cc1a916317c416f6f56cce7c01867417e4d5373a5ba94c4cc1c42e2c0c48faf4387617ea80cc0ad4dce27f9e2306591762ead22003440abc6a5d7144272297ad73cd40c7bd948e4a8a9cf9c8cd10dbb66582042cf31cbd1490e38d371fcde9a9d0197504b10c9c7c0147549a681c17a4c45c53091cdc966360636226ee4f56863aa31c06939146096c7bb39b870904d76acd05fa4062769b8efd7d0de9fde61d956d18ca5058550dad6bc85058456b8df0fbadb9e1528ed3f29f81ad1d840dcf55760c8b42e0636eea98bb7282eb7b5e6d40d3074c3f810dee3c316112646ed6f92e5d98fe5330acfe3ec77ec54215475eb41b4d1b6095cf950006793b87afdc2ce59d5efba4687d6e432447892dd82121fc9a200ff9769d265e9e6b10c8c9444ea616a088cb2b1ad5d30137a7f9a72cad28915fe1d109e1997af1d3c94c25b3096811cdc2e1065f98c993e0996dc346c85c87cb6db213370a639f288c33dd360d377b1b4890e8e32ad8b13f8db46e3851dda0ea3f4fced8dfb302f6241cdb236b4c823665d440b75fb4ffedc2af87a4fe1327ea7deb0e1bdac6fd2c65e39c805197309051f18af83d75e0e2039f0ef082f9f0eb58b5a56816df472297c94913b77a760553212275eb8a99c4911e536bd35302c6225c001f05412a085b2f303698b074570c92d477
+b'\xea\x00\x00\x00\x01s'
+Connection closed by remote host
+b''
+Connection closed by remote host
+Connection closed by remote host
+Hello from new3 app.py!
+Traceback (most recent call last):
+  File "/storage/emulated/0/newmytcp/account/new3/app.py", line 2464, in <module>
+    client_thread = FF_CLIENT(id="4124519", password="FF258C6A604AE2959A373A1106FA42452192CD54801E728ED90BBCB48")
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/storage/emulated/0/newmytcp/account/new3/app.py", line 614, in __init__
+    self.get_tok()
+  File "/storage/emulated/0/newmytcp/account/new3/app.py", line 2390, in get_tok
+    token, key, iv, Timestamp, ip, port = self.guest_token(self.id, self.password)
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/storage/emulated/0/newmytcp/account/new3/app.py", line 2333, in guest_token
+    NEW_ACCESS_TOKEN = data['access_token']
+                       ~~~~^^^^^^^^^^^^^^^^
+KeyError: 'access_token'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/storage/emulated/0/newmytcp/account/new3/app.py", line 2468, in <module>
+    restart_program()
+  File "/storage/emulated/0/newmytcp/account/new3/app.py", line 592, in restart_program
+    connections = psutil.net_connections()
+                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/data/com.termux/files/usr/lib/python3.12/site-packages/psutil/__init__.py", line 2211, in net_connections
+    return _psplatform.net_connections(kind)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/data/com.termux/files/usr/lib/python3.12/site-packages/psutil/_pslinux.py", line 987, in net_connections
+    return _net_connections.retrieve(kind)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/data/com.termux/files/usr/lib/python3.12/site-packages/psutil/_pslinux.py", line 969, in retrieve
+    for fd, family, type_, laddr, raddr, status, bound_pid in ls:
+                                                              ^^
+  File "/data/data/com.termux/files/usr/lib/python3.12/site-packages/psutil/_pslinux.py", line 878, in process_inet
+    with open_text(file) as f:
+         ^^^^^^^^^^^^^^^
+  File "/data/data/com.termux/files/usr/lib/python3.12/site-packages/psutil/_common.py", line 774, in open_text
+    fobj = open(  # noqa: SIM115
+           ^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 13] Permission denied: '/proc/net/tcp'
