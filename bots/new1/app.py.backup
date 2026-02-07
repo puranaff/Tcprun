@@ -1,0 +1,1277 @@
+import logging
+import os
+import json
+import requests
+import asyncio
+import re
+from datetime import datetime, timedelta
+from telegram import Update
+from telegram.ext import Application, CommandHandler, ContextTypes
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
+import pytz
+
+# ===== CONFIG =====
+BOT_TOKEN = "8452514218:AAF1WuCbdEKhT30teKzVsIez8Ww02zDb6LI"
+OWNER_ID = 5651796937
+ADMIN_ID = OWNER_ID
+API_URL = "https://narayan-x-noob.vercel.app/api/{server_name}/{uid}?key=CHUPEE"
+DATA_FILE = "like.txt"
+CONFIG_FILE = "config.json"
+ADMINS_FILE = "admins.json"
+
+# ===== TIMEZONE =====
+IST = pytz.timezone('Asia/Kolkata')
+
+# ===== REGIONS =====
+VALID_REGIONS = [
+    "IND", "BR", "US", "NA", "SAC", "SG", "RU", "ID", 
+    "TW", "VN", "TH", "ME", "PK", "CIS", "BD", "EUROPE", "EU"
+]
+
+# ===== LOGGER =====
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+# Global scheduler
+scheduler = AsyncIOScheduler(timezone=IST)
+
+# ===== ADMIN MANAGEMENT =====
+def load_admins():
+    try:
+        if not os.path.exists(ADMINS_FILE):
+            admins = [OWNER_ID]
+            save_admins(admins)
+            return admins
+        with open(ADMINS_FILE, "r") as f:
+            admins = json.load(f)
+            if OWNER_ID not in admins:
+                admins.append(OWNER_ID)
+                save_admins(admins)
+            return admins
+    except Exception as e:
+        logger.error(f"Error loading admins: {e}")
+        return [OWNER_ID]
+
+def save_admins(admins):
+    try:
+        with open(ADMINS_FILE, "w") as f:
+            json.dump(admins, f, indent=2)
+    except Exception as e:
+        logger.error(f"Error saving admins: {e}")
+
+def is_owner(user_id):
+    return user_id == OWNER_ID
+
+def is_admin(user_id):
+    admins = load_admins()
+    return user_id in admins
+
+# ===== FILE HANDLER =====
+def load_data():
+    try:
+        if not os.path.exists(DATA_FILE):
+            with open(DATA_FILE, "w") as f:
+                json.dump([], f)
+            return []
+        with open(DATA_FILE, "r") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Error loading data: {e}")
+        return []
+
+def save_data(data):
+    try:
+        with open(DATA_FILE, "w") as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        logger.error(f"Error saving data: {e}")
+
+def load_config():
+    try:
+        if not os.path.exists(CONFIG_FILE):
+            config = {
+                "like_time": "05:00",
+                "group_ids": [],
+                "notify_users": True
+            }
+            save_config(config)
+            return config
+        with open(CONFIG_FILE, "r") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Error loading config: {e}")
+        return {"like_time": "05:00", "group_ids": [], "notify_users": True}
+
+def save_config(config):
+    try:
+        with open(CONFIG_FILE, "w") as f:
+            json.dump(config, f, indent=2)
+    except Exception as e:
+        logger.error(f"Error saving config: {e}")
+
+# ===== FORMAT API RESPONSE =====
+def format_response(r: dict, remaining_likes: int = None) -> str:
+    if r.get("status") == 1:
+        response_data = r.get('response', {})
+        response_text = (
+            f"Player: {response_data.get('PlayerNickname', 'N/A')}\n"
+            f"UID: {response_data.get('UID', 'N/A')}\n"
+            f"Level: {response_data.get('PlayerLevel', 'N/A')}\n"
+            f"Likes Before: {response_data.get('LikesbeforeCommand', 'N/A')}\n"
+            f"Likes After: {response_data.get('LikesafterCommand', 'N/A')}\n"
+            f"Likes Given: {response_data.get('LikesGivenByAPI', 'N/A')}\n"
+            f"Key Expires: {response_data.get('KeyExpiresAt', 'N/A')}\n"
+            f"Remaining Requests: {response_data.get('KeyRemainingRequests', 'N/A')}\n"
+        )
+        
+        if remaining_likes is not None:
+            response_text += f"Remaining Likes: {remaining_likes}\n"
+            
+        response_text += "Powered by @NEXO_247 & @NoobVellen"
+        return response_text
+    
+    elif r.get("status") == 2:
+        response_text = (
+            f"Status: Already Liked Today\n"
+            f"Message: {r.get('message', 'N/A')}\n"
+            f"Key Expires: {r.get('expires_at', 'N/A')}\n"
+        )
+        
+        if remaining_likes is not None:
+            response_text += f"Remaining Likes: {remaining_likes}\n"
+            
+        response_text += "Powered by @NEXO_247 & @NoobVellen"
+        return response_text
+    
+    elif r.get("status") == 3:
+        return (
+            f"Status: Failed\n"
+            f"Error: {r.get('message', 'Unknown error')}\n"
+            f"Powered by @NEXO_247 & @NoobVellen"
+        )
+    
+    else:
+        return (
+            f"Status: {r.get('status', 'Unknown')}\n"
+            f"Message: {r.get('message', 'No message')}\n"
+            f"Error: {r.get('error', 'Unknown error')}\n"
+            f"Powered by @NEXO_247 & @NoobVellen"
+        )
+
+# ===== SEND MESSAGE TO MULTIPLE CHATS =====
+async def send_to_all_chats(app: Application, text: str, user_id=None):
+    config = load_config()
+    admins = load_admins()
+    
+    for admin_id in admins:
+        try:
+            await app.bot.send_message(chat_id=admin_id, text=text)
+        except Exception as e:
+            logger.error(f"Error sending to admin {admin_id}: {e}")
+    
+    for group_id in config.get("group_ids", []):
+        try:
+            await app.bot.send_message(chat_id=group_id, text=text)
+        except Exception as e:
+            logger.error(f"Error sending to group {group_id}: {e}")
+    
+    if user_id and config.get("notify_users", True):
+        try:
+            await app.bot.send_message(chat_id=user_id, text=text)
+        except Exception as e:
+            logger.error(f"Error sending to user {user_id}: {e}")
+
+# ===== DAILY LIKE FUNCTION =====
+async def daily_likes(app: Application):
+    try:
+        current_time = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S %Z')
+        logger.info(f"Daily likes started at: {current_time}")
+        
+        if not app or not hasattr(app, 'bot'):
+            logger.error("Application not properly initialized")
+            return
+            
+        data = load_data()
+        if not data:
+            logger.info("No data found for daily likes")
+            await send_to_all_chats(app, "ℹ️ No users found for daily likes today.")
+            return
+            
+        new_data = []
+        success_count = 0
+        fail_count = 0
+        completed_count = 0
+        results = []
+        
+        logger.info(f"Starting daily likes for {len(data)} UIDs")
+        
+        for entry in data:
+            uid = entry["uid"]
+            region = entry["region"]
+            total_likes = entry["total_likes"]
+            used_likes = entry.get("used_likes", 0)
+            remaining_likes = total_likes - used_likes
+            user_id = entry.get("user_id")
+
+            if remaining_likes <= 0:
+                text = f"🎉 AutoLike Completed\nUID: {uid}\nRegion: {region}\nAll {total_likes} likes have been delivered!"
+                results.append((text, user_id))
+                completed_count += 1
+                logger.info(f"UID {uid} completed - all likes delivered")
+                continue
+
+            try:
+                url = API_URL.format(uid=uid, server_name=region)
+                logger.info(f"Sending like to UID: {uid}, Region: {region}, Remaining: {remaining_likes}")
+                
+                response = requests.get(url, timeout=30)
+                r = response.json()
+                logger.info(f"API Response for {uid}: {r}")
+
+                if r.get("status") in [1, 2]:
+                    likes_given = 0
+                    
+                    if r.get("status") == 1:
+                        response_data = r.get('response', {})
+                        likes_given = int(response_data.get('LikesGivenByAPI', 0))
+                        entry["used_likes"] = used_likes + likes_given
+                        entry["last_success"] = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')
+                        entry["today_status"] = "✅ Today's like sent"
+                        
+                        new_remaining = total_likes - entry["used_likes"]
+                        
+                        if new_remaining <= 0:
+                            text = f"🎉 AutoLike Completed\nUID: {uid}\nRegion: {region}\nAll {total_likes} likes delivered!\nTotal Used: {entry['used_likes']}"
+                            results.append((text, user_id))
+                            completed_count += 1
+                            logger.info(f"UID {uid} completed after this like")
+                            continue
+                        else:
+                            text = f"✅ Daily AutoLike Success\n{format_response(r, new_remaining)}"
+                            new_data.append(entry)
+                    else:
+                        entry["today_status"] = "⚠️ Already liked today"
+                        entry["last_check"] = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')
+                        new_remaining = total_likes - entry["used_likes"]
+                        text = f"⚠️ Daily AutoLike - Already Liked Today\n{format_response(r, new_remaining)}"
+                        new_data.append(entry)
+                    
+                    results.append((text, user_id))
+                    success_count += 1
+                    
+                else:
+                    new_data.append(entry)
+                    entry["today_status"] = "❌ Failed (will retry)"
+                    error_msg = r.get('error', 'Unknown error')
+                    text = f"❌ Daily AutoLike Failed\nUID: {uid}\nRegion: {region}\nError: {error_msg}\nRemaining Likes: {remaining_likes} (unchanged - will retry tomorrow)"
+                    results.append((text, user_id))
+                    fail_count += 1
+                    logger.warning(f"Like failed for UID {uid}, likes not reduced")
+
+            except requests.exceptions.RequestException as e:
+                new_data.append(entry)
+                entry["today_status"] = "❌ Network error (will retry)"
+                text = f"❌ Network Error\nUID: {uid}\nRegion: {region}\nError: {str(e)}\nRemaining Likes: {remaining_likes} (unchanged - will retry tomorrow)"
+                results.append((text, user_id))
+                fail_count += 1
+                logger.error(f"Network error sending like to {uid}: {e}")
+            except Exception as e:
+                new_data.append(entry)
+                entry["today_status"] = "❌ Error (will retry)"
+                text = f"❌ Unexpected Error\nUID: {uid}\nRegion: {region}\nError: {str(e)}\nRemaining Likes: {remaining_likes} (unchanged - will retry tomorrow)"
+                results.append((text, user_id))
+                fail_count += 1
+                logger.error(f"Error sending like to {uid}: {e}")
+
+        save_data(new_data)
+        
+        for i, (text, user_id) in enumerate(results):
+            try:
+                await send_to_all_chats(app, text, user_id)
+                if (i + 1) % 10 == 0:
+                    await asyncio.sleep(2)
+                else:
+                    await asyncio.sleep(0.5)
+            except Exception as e:
+                logger.error(f"Error sending result: {e}")
+        
+        summary = (
+            f"📊 Daily AutoLike Summary\n"
+            f"Time: {datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S IST')}\n"
+            f"Success: {success_count}\n"
+            f"Failed: {fail_count}\n"
+            f"Completed: {completed_count}\n"
+            f"Remaining Entries: {len(new_data)}"
+        )
+        await send_to_all_chats(app, summary)
+        
+        logger.info(f"Daily likes completed. Success: {success_count}, Failed: {fail_count}, Completed: {completed_count}, Remaining: {len(new_data)}")
+        
+    except Exception as e:
+        logger.error(f"Error in daily_likes: {e}")
+        try:
+            await send_to_all_chats(app, f"❌ Critical error in daily_likes: {e}")
+        except:
+            pass
+
+# ===== SCHEDULER SETUP =====
+def setup_scheduler(app: Application):
+    config = load_config()
+    like_time = config.get("like_time", "05:00")
+    
+    try:
+        time_parts = like_time.split(":")
+        hour = int(time_parts[0])
+        minute = int(time_parts[1]) if len(time_parts) > 1 else 0
+    except (ValueError, IndexError):
+        hour, minute = 5, 0
+        logger.warning(f"Invalid time format, using default 05:00")
+    
+    scheduler.remove_all_jobs()
+    
+    scheduler.add_job(
+        daily_likes,
+        CronTrigger(hour=hour, minute=minute, timezone=IST),
+        args=[app],
+        id='daily_likes_job',
+        replace_existing=True
+    )
+    
+    job = scheduler.get_job('daily_likes_job')
+    if job and job.next_run_time:
+        next_run_ist = job.next_run_time.astimezone(IST)
+        logger.info(f"⏰ Scheduler configured for {hour:02d}:{minute:02d} IST daily")
+        logger.info(f"📅 Next run: {next_run_ist.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+    
+    return hour, minute
+
+# ===== MANUAL LIKE COMMAND =====
+async def manual_like(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        if not is_admin(update.effective_user.id):
+            await update.message.reply_text("❌ Only admins can use this command")
+            return
+            
+        if len(context.args) != 2:
+            await update.message.reply_text(
+                "⚠️ Usage: /like <region> <uid>\n\n"
+                f"🌍 Supported Regions: {', '.join(VALID_REGIONS)}\n\n"
+                "Example:\n"
+                "/like IND 123456789\n"
+                "/like BR 987654321"
+            )
+            return
+            
+        region, uid = context.args
+        region_upper = region.upper()
+        
+        if region_upper not in VALID_REGIONS:
+            await update.message.reply_text(
+                f"❌ Invalid region. Supported regions:\n{', '.join(VALID_REGIONS)}"
+            )
+            return
+            
+        try:
+            uid_int = int(uid)
+            if uid_int <= 0:
+                raise ValueError
+        except ValueError:
+            await update.message.reply_text("❌ UID must be a valid positive number")
+            return
+        
+        processing_msg = await update.message.reply_text(
+            f"🔄 Sending like to UID: {uid}\nRegion: {region_upper}\nPlease wait..."
+        )
+        
+        try:
+            url = API_URL.format(uid=uid, server_name=region_upper)
+            logger.info(f"Manual like request - UID: {uid}, Region: {region_upper}")
+            
+            response = requests.get(url, timeout=30)
+            r = response.json()
+            
+            if r.get("status") == 1:
+                response_text = f"✅ LIKE SENT SUCCESSFULLY\n\n{format_response(r)}"
+            elif r.get("status") == 2:
+                response_text = f"⚠️ ALREADY LIKED TODAY\n\n{format_response(r)}"
+            else:
+                response_text = f"❌ LIKE FAILED\n\n{format_response(r)}"
+            
+            await processing_msg.edit_text(response_text)
+            logger.info(f"Manual like completed for UID: {uid}, Status: {r.get('status')}")
+            
+        except requests.exceptions.Timeout:
+            await processing_msg.edit_text(
+                f"❌ Request Timeout\n"
+                f"UID: {uid}\n"
+                f"Region: {region_upper}\n"
+                f"The API took too long to respond. Please try again.\n"
+                f"Powered by @NEXO_247 & @NoobVellen"
+            )
+        except requests.exceptions.RequestException as e:
+            await processing_msg.edit_text(
+                f"❌ Network Error\n"
+                f"UID: {uid}\n"
+                f"Region: {region_upper}\n"
+                f"Error: {str(e)}\n"
+                f"Powered by @NEXO_247 & @NoobVellen"
+            )
+        except Exception as e:
+            await processing_msg.edit_text(
+                f"❌ Error\n"
+                f"UID: {uid}\n"
+                f"Region: {region_upper}\n"
+                f"Error: {str(e)}\n"
+                f"Powered by @NEXO_247 & @NoobVellen"
+            )
+            
+    except Exception as e:
+        logger.error(f"Error in manual_like command: {e}")
+        await update.message.reply_text("❌ An error occurred while processing your request")
+
+# ===== MY AUTOLIKE COMMAND =====
+async def my_autolike(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        user_id = update.effective_user.id
+        data = load_data()
+        
+        user_entries = [entry for entry in data if entry.get("user_id") == user_id]
+        
+        if not user_entries:
+            await update.message.reply_text(
+                "📭 You have no active AutoLike UIDs\n\n"
+                "Contact @NEXO_247 or @NoobVellen to purchase AutoLike service!"
+            )
+            return
+        
+        total_likes_purchased = sum(entry["total_likes"] for entry in user_entries)
+        total_used = sum(entry.get("used_likes", 0) for entry in user_entries)
+        total_remaining = total_likes_purchased - total_used
+        active_count = len(user_entries)
+        
+        summary = (
+            "📊 Your AutoLike Summary\n\n"
+            f"Active UIDs: {active_count}\n"
+            f"Expired UIDs: 0\n"
+            f"Total Likes Purchased: {total_likes_purchased}\n"
+            f"Total Used Likes: {total_used}\n"
+            f"Total Remaining Likes: {total_remaining}\n\n"
+            "UIDs receive likes in position order during daily processing (5:00 AM IST)\n\n"
+            "📋 Your AutoLike UIDs:\n\n"
+            "✅ Active UIDs (Ordered by Position):\n\n"
+        )
+        
+        for i, entry in enumerate(user_entries, 1):
+            uid = entry["uid"]
+            region = entry["region"]
+            total_likes = entry["total_likes"]
+            used_likes = entry.get("used_likes", 0)
+            remaining_likes = total_likes - used_likes
+            today_status = entry.get("today_status", "⏳ Pending")
+            last_success = entry.get("last_success", "Never")
+            
+            uid_info = (
+                f"🔸 UID: {uid}\n"
+                f"🔸 Region: {region}\n"
+                f"🔸 Status: ✅ Active\n"
+                f"🔸 Total Likes: {total_likes}\n"
+                f"🔸 Used Likes: {used_likes}\n"
+                f"🔸 Remaining Likes: {remaining_likes}\n"
+                f"🔸 Today's Status: {today_status}\n"
+                f"🔸 Last Success: {last_success}\n\n"
+            )
+            
+            if len(summary) + len(uid_info) > 4000:
+                await update.message.reply_text(summary)
+                summary = uid_info
+            else:
+                summary += uid_info
+        
+        summary += "\nDeveloper: @NEXO_247 & @NoobVellen"
+        await update.message.reply_text(summary)
+        
+    except Exception as e:
+        logger.error(f"Error in my_autolike: {e}")
+        await update.message.reply_text("❌ Error fetching your AutoLike data")
+
+# ===== OTHER COMMANDS =====
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        welcome_text = (
+            "✨━━━━━━━━━━━━━━━✨\n"
+            "🎉 WELCOME TO AUTO-LIKE BOT 🎉\n"
+            "✨━━━━━━━━━━━━━━━✨\n\n"
+            f"Hello, {update.effective_user.first_name}! 👋\n"
+            "This bot will automatically give likes daily at configured time.\n\n"
+            "🌍 SUPPORTED REGIONS:\n"
+            f"{', '.join(VALID_REGIONS)}\n\n"
+            "💰 PRICING PLANS:\n"
+            "• 120 Rs - 1540 likes (7 days @ 220/day)\n"
+            "• 200 Rs - 3300 likes (15 days @ 220/day)\n"
+            "• 350 Rs - 6600 likes (30 days @ 220/day)\n"
+            "• 650 Rs - 13200 likes (60 days @ 220/day)\n\n"
+            "🔍 Check Your Status:\n"
+            "Use /myautolike to see your active UIDs\n\n"
+            "📞 CONTACT FOR SERVICE:\n"
+            "Developer: @NEXO_247 & @NoobVellen\n"
+            "✨━━━━━━━━━━━━━━━✨"
+        )
+        await update.message.reply_text(welcome_text)
+        logger.info(f"Start command executed by {update.effective_user.id}")
+    except Exception as e:
+        logger.error(f"Error in start command: {e}")
+
+async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        user_id = update.effective_user.id
+        
+        if is_owner(user_id):
+            text = (
+                "✨━━━━━━━━━━━━━━━✨\n"
+                "🛠️ BOT COMMANDS 🛠️\n"
+                "✨━━━━━━━━━━━━━━━✨\n\n"
+                "👤 User Commands:\n"
+                "/start - Start the bot\n"
+                "/myautolike - View your AutoLike status\n\n"
+                "👑 Owner Commands:\n"
+                "/addadmin <user_id> - Add admin\n"
+                "/removeadmin <user_id> - Remove admin\n"
+                "/adminlist - Show all admins\n\n"
+                "⚡ Admin Commands:\n"
+                "/like <region> <uid> - Send manual like\n"
+                "/autolike <region> <uid> <likes> - Add AutoLike\n"
+                "/autolike <region> <uid> <likes> <user_id> - Add with notification\n"
+                "/extenduid <uid> <likes> - Extend likes\n"
+                "/remove_autolike <uid> - Remove UID\n"
+                "/like_list - Show active UIDs\n"
+                "/force_like - Force immediate like\n"
+                "/settime <HH:MM> - Change daily time\n"
+                "/addgroup <group_id> - Add group\n"
+                "/removegroup <group_id> - Remove group\n"
+                "/grouplist - Show groups\n"
+                "/settings - Show settings\n"
+                "/toggle_user_notify - Toggle notifications\n"
+                "/sndmsg <group_id> - Send message to group\n\n"
+                f"🌍 Regions: {', '.join(VALID_REGIONS)}\n"
+                "Developer: @NEXO_247 & @NoobVellen"
+            )
+        elif is_admin(user_id):
+            text = (
+                "✨━━━━━━━━━━━━━━━✨\n"
+                "🛠️ BOT COMMANDS 🛠️\n"
+                "✨━━━━━━━━━━━━━━━✨\n\n"
+                "👤 User Commands:\n"
+                "/start - Start the bot\n"
+                "/myautolike - View your AutoLike status\n\n"
+                "⚡ Admin Commands:\n"
+                "/like <region> <uid> - Send manual like\n"
+                "/autolike <region> <uid> <likes> - Add AutoLike\n"
+                "/extenduid <uid> <likes> - Extend likes\n"
+                "/remove_autolike <uid> - Remove UID\n"
+                "/like_list - Show active UIDs\n"
+                "/force_like - Force immediate like\n"
+                "/settime <HH:MM> - Change daily time\n"
+                "/addgroup <group_id> - Add group\n"
+                "/removegroup <group_id> - Remove group\n"
+                "/settings - Show settings\n"
+                "/adminlist - Show admins\n\n"
+                f"🌍 Regions: {', '.join(VALID_REGIONS)}\n"
+                "Developer: @NEXO_247 & @NoobVellen"
+            )
+        else:
+            text = (
+                "✨━━━━━━━━━━━━━━━✨\n"
+                "🛠️ BOT COMMANDS 🛠️\n"
+                "✨━━━━━━━━━━━━━━━✨\n\n"
+                "👤 User Commands:\n"
+                "/start - Start the bot\n"
+                "/myautolike - View your AutoLike status\n\n"
+                "📞 For AutoLike service:\n"
+                "Developer: @NEXO_247 & @NoobVellen\n"
+                "✨━━━━━━━━━━━━━━━✨"
+            )
+        
+        await update.message.reply_text(text)
+    except Exception as e:
+        logger.error(f"Error in help command: {e}")
+
+async def like_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        if not is_admin(update.effective_user.id):
+            return
+            
+        data = load_data()
+        if not data:
+            await update.message.reply_text("📭 No active AutoLike entries")
+            return
+        
+        total_entries = len(data)
+        chunk_size = 30
+        chunks = [data[i:i + chunk_size] for i in range(0, len(data), chunk_size)]
+        
+        for chunk_index, chunk in enumerate(chunks):
+            msg = f"📋 ACTIVE AUTOLIKE LIST (Part {chunk_index + 1}/{len(chunks)})\n\n"
+            
+            for i, d in enumerate(chunk, chunk_index * chunk_size + 1):
+                total_likes = d["total_likes"]
+                used_likes = d.get("used_likes", 0)
+                remaining = total_likes - used_likes
+                user_info = f" | User: {d.get('user_id', 'Not set')}" if d.get('user_id') else ""
+                extended_info = f" | Ext: Yes" if d.get('extended_date') else ""
+                msg += f"{i}. UID: {d['uid']} | Region: {d['region']} | Total: {total_likes} | Used: {used_likes} | Remaining: {remaining}{user_info}{extended_info}\n"
+            
+            msg += f"\n📊 Showing {chunk_index * chunk_size + 1}-{chunk_index * chunk_size + len(chunk)} of {total_entries}"
+            
+            if chunk_index == len(chunks) - 1:
+                msg += f"\n\nTotal: {total_entries}\nDeveloper: @NEXO_247 & @NoobVellen"
+            
+            await update.message.reply_text(msg)
+            await asyncio.sleep(0.5)
+        
+    except Exception as e:
+        logger.error(f"Error in like_list: {e}")
+        await update.message.reply_text("❌ Error fetching list")
+
+async def autolike(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        if not is_admin(update.effective_user.id):
+            return
+            
+        if len(context.args) not in [3, 4]:
+            await update.message.reply_text(
+                "⚠️ Usage:\n"
+                "/autolike <region> <uid> <likes>\n"
+                "/autolike <region> <uid> <likes> <user_id>\n\n"
+                f"Regions: {', '.join(VALID_REGIONS)}\n\n"
+                "Example:\n"
+                "/autolike IND 123456789 3000"
+            )
+            return
+            
+        if len(context.args) == 3:
+            region, uid, likes = context.args
+            user_id = None
+        else:
+            region, uid, likes, user_id = context.args
+        
+        region_upper = region.upper()
+        if region_upper not in VALID_REGIONS:
+            await update.message.reply_text(f"❌ Invalid region: {', '.join(VALID_REGIONS)}")
+            return
+            
+        try:
+            uid_int = int(uid)
+            if uid_int <= 0:
+                raise ValueError
+        except ValueError:
+            await update.message.reply_text("❌ UID must be positive number")
+            return
+            
+        try:
+            likes_int = int(likes)
+            if likes_int <= 0 or likes_int > 100000:
+                raise ValueError
+            likes = likes_int
+        except ValueError:
+            await update.message.reply_text("❌ Likes must be 1-100000")
+            return
+            
+        if user_id:
+            try:
+                user_id_int = int(user_id)
+                if user_id_int <= 0:
+                    raise ValueError
+            except ValueError:
+                await update.message.reply_text("❌ User ID invalid")
+                return
+
+        data = load_data()
+        data = [d for d in data if d["uid"] != uid]
+        
+        new_entry = {
+            "region": region_upper, 
+            "uid": uid, 
+            "total_likes": likes,
+            "used_likes": 0,
+            "added_date": datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S'),
+            "today_status": "⏳ Pending",
+            "last_success": "Never"
+        }
+        
+        if user_id:
+            new_entry["user_id"] = user_id
+            
+        data.append(new_entry)
+        save_data(data)
+
+        response_text = (
+            f"✅ AUTO-LIKE ADDED\n"
+            f"Region: {region_upper}\n"
+            f"UID: {uid}\n"
+            f"Total Likes: {likes}\n"
+        )
+        
+        if user_id:
+            response_text += f"User: {user_id}\n"
+        
+        response_text += (
+            f"Next: {load_config().get('like_time', '05:00')} IST\n"
+            f"Total: {len(data)}\n"
+            f"Developer: @NEXO_247 & @NoobVellen"
+        )
+        
+        await update.message.reply_text(response_text)
+        logger.info(f"AutoLike added: {uid} ({region_upper}) for {likes} likes")
+        
+    except Exception as e:
+        logger.error(f"Error in autolike: {e}")
+        await update.message.reply_text("❌ Error processing request")
+
+async def extend_uid(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        if not is_admin(update.effective_user.id):
+            return
+            
+        if len(context.args) != 2:
+            await update.message.reply_text(
+                "⚠️ Usage: /extenduid <uid> <likes>\n"
+                "Example: /extenduid 123456789 3000"
+            )
+            return
+            
+        uid, likes = context.args
+        
+        try:
+            uid_int = int(uid)
+            if uid_int <= 0:
+                raise ValueError
+        except ValueError:
+            await update.message.reply_text("❌ UID invalid")
+            return
+            
+        try:
+            likes_int = int(likes)
+            if likes_int <= 0 or likes_int > 100000:
+                raise ValueError
+            likes = likes_int
+        except ValueError:
+            await update.message.reply_text("❌ Likes must be 1-100000")
+            return
+
+        data = load_data()
+        
+        uid_found = False
+        for entry in data:
+            if entry["uid"] == uid:
+                old_total = entry["total_likes"]
+                entry["total_likes"] += likes
+                entry["extended_date"] = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')
+                uid_found = True
+                
+                used = entry.get("used_likes", 0)
+                new_remaining = entry["total_likes"] - used
+                
+                response_text = (
+                    f"✅ UID EXTENDED\n"
+                    f"UID: {uid}\n"
+                    f"Region: {entry['region']}\n"
+                    f"Old Total Likes: {old_total}\n"
+                    f"Added Likes: {likes}\n"
+                    f"New Total: {entry['total_likes']}\n"
+                    f"Used: {used}\n"
+                    f"Remaining: {new_remaining}\n"
+                    f"Developer: @NEXO_247 & @NoobVellen"
+                )
+                break
+        
+        if uid_found:
+            save_data(data)
+            await update.message.reply_text(response_text)
+            logger.info(f"UID {uid} extended by {likes} likes")
+        else:
+            await update.message.reply_text(f"❌ UID {uid} not found")
+            
+    except Exception as e:
+        logger.error(f"Error in extend_uid: {e}")
+        await update.message.reply_text("❌ Error extending UID")
+
+async def remove_autolike(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        if not is_admin(update.effective_user.id):
+            return
+            
+        if len(context.args) != 1:
+            await update.message.reply_text("⚠️ Usage: /remove_autolike <uid>")
+            return
+
+        uid = context.args[0]
+        data = load_data()
+        initial_count = len(data)
+        
+        new_data = [d for d in data if d["uid"] != uid]
+        save_data(new_data)
+        
+        removed_count = initial_count - len(new_data)
+        
+        if removed_count > 0:
+            await update.message.reply_text(
+                f"✅ UID {uid} removed\n"
+                f"Remaining: {len(new_data)}\n"
+                f"Developer: @NEXO_247 & @NoobVellen"
+            )
+            logger.info(f"AutoLike removed: {uid}")
+        else:
+            await update.message.reply_text(f"❌ UID {uid} not found")
+            
+    except Exception as e:
+        logger.error(f"Error in remove_autolike: {e}")
+        await update.message.reply_text("❌ Error removing UID")
+
+async def force_like(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        if not is_admin(update.effective_user.id):
+            return
+            
+        await update.message.reply_text("🔄 Force starting daily likes...")
+        
+        app = context.application
+        await daily_likes(app)
+        
+        await update.message.reply_text("✅ Force like completed")
+        
+    except Exception as e:
+        logger.error(f"Error in force_like: {e}")
+        await update.message.reply_text(f"❌ Error: {str(e)}")
+
+async def settime(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        if not is_admin(update.effective_user.id):
+            return
+            
+        if len(context.args) != 1:
+            await update.message.reply_text("⚠️ Usage: /settime <HH:MM>\nExample: /settime 05:00")
+            return
+            
+        time_str = context.args[0]
+        
+        if not re.match(r'^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$', time_str):
+            await update.message.reply_text("❌ Invalid format. Use HH:MM (24-hour)")
+            return
+            
+        config = load_config()
+        config["like_time"] = time_str
+        save_config(config)
+        
+        app = context.application
+        hour, minute = setup_scheduler(app)
+        
+        await update.message.reply_text(
+            f"✅ Time changed to {time_str} IST\n"
+            f"Scheduler restarted successfully\n"
+            f"Next run: {time_str} IST tomorrow"
+        )
+        logger.info(f"Time changed to {time_str} by {update.effective_user.id}")
+        
+    except Exception as e:
+        logger.error(f"Error in settime: {e}")
+        await update.message.reply_text("❌ Error changing time")
+
+async def addgroup(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        if not is_admin(update.effective_user.id):
+            return
+            
+        if len(context.args) != 1:
+            await update.message.reply_text("⚠️ Usage: /addgroup <group_id>")
+            return
+            
+        group_id = context.args[0]
+        
+        try:
+            group_id_int = int(group_id)
+            if group_id_int >= 0:
+                await update.message.reply_text("❌ Group ID should be negative")
+                return
+        except ValueError:
+            await update.message.reply_text("❌ Invalid group ID")
+            return
+            
+        config = load_config()
+        group_ids = config.get("group_ids", [])
+        
+        if group_id in group_ids:
+            await update.message.reply_text("❌ Group already added")
+            return
+            
+        group_ids.append(group_id)
+        config["group_ids"] = group_ids
+        save_config(config)
+        
+        await update.message.reply_text(f"✅ Group added\nTotal: {len(group_ids)}")
+        logger.info(f"Group {group_id} added")
+        
+    except Exception as e:
+        logger.error(f"Error in addgroup: {e}")
+        await update.message.reply_text("❌ Error adding group")
+
+async def removegroup(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        if not is_admin(update.effective_user.id):
+            return
+            
+        if len(context.args) != 1:
+            await update.message.reply_text("⚠️ Usage: /removegroup <group_id>")
+            return
+            
+        group_id = context.args[0]
+        
+        config = load_config()
+        group_ids = config.get("group_ids", [])
+        
+        if group_id not in group_ids:
+            await update.message.reply_text("❌ Group not found")
+            return
+            
+        group_ids.remove(group_id)
+        config["group_ids"] = group_ids
+        save_config(config)
+        
+        await update.message.reply_text(f"✅ Group removed\nRemaining: {len(group_ids)}")
+        logger.info(f"Group {group_id} removed")
+        
+    except Exception as e:
+        logger.error(f"Error in removegroup: {e}")
+        await update.message.reply_text("❌ Error removing group")
+
+async def grouplist(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        if not is_admin(update.effective_user.id):
+            return
+            
+        config = load_config()
+        group_ids = config.get("group_ids", [])
+        
+        if not group_ids:
+            await update.message.reply_text("📭 No groups added")
+            return
+            
+        msg = "📋 NOTIFICATION GROUPS\n\n"
+        for i, group_id in enumerate(group_ids, 1):
+            msg += f"{i}. {group_id}\n"
+        
+        msg += f"\nTotal: {len(group_ids)}"
+        await update.message.reply_text(msg)
+        
+    except Exception as e:
+        logger.error(f"Error in grouplist: {e}")
+        await update.message.reply_text("❌ Error fetching groups")
+
+async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        if not is_admin(update.effective_user.id):
+            return
+            
+        config = load_config()
+        data = load_data()
+        admins = load_admins()
+        
+        total_likes = sum(d["total_likes"] for d in data)
+        used_likes = sum(d.get("used_likes", 0) for d in data)
+        remaining_likes = total_likes - used_likes
+        
+        settings_text = (
+            "⚙️ BOT SETTINGS\n\n"
+            f"🕒 Daily Time: {config.get('like_time', '05:00')} IST\n"
+            f"📊 Active UIDs: {len(data)}\n"
+            f"💰 Total Likes: {total_likes}\n"
+            f"✅ Used Likes: {used_likes}\n"
+            f"⏳ Remaining: {remaining_likes}\n"
+            f"👥 Groups: {len(config.get('group_ids', []))}\n"
+            f"👑 Admins: {len(admins)}\n"
+            f"🔔 User Notify: {'ON' if config.get('notify_users', True) else 'OFF'}\n"
+            f"👑 Owner: {OWNER_ID}\n\n"
+            "Developer: @NEXO_247 & @NoobVellen"
+        )
+        
+        await update.message.reply_text(settings_text)
+        
+    except Exception as e:
+        logger.error(f"Error in settings: {e}")
+        await update.message.reply_text("❌ Error fetching settings")
+
+async def toggle_user_notify(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        if not is_admin(update.effective_user.id):
+            return
+            
+        config = load_config()
+        current = config.get("notify_users", True)
+        config["notify_users"] = not current
+        save_config(config)
+        
+        status = "enabled" if config["notify_users"] else "disabled"
+        await update.message.reply_text(f"✅ User notifications {status}")
+        logger.info(f"User notifications {status}")
+        
+    except Exception as e:
+        logger.error(f"Error in toggle: {e}")
+        await update.message.reply_text("❌ Error toggling")
+
+async def add_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        if not is_owner(update.effective_user.id):
+            await update.message.reply_text("❌ Only owner can add admins")
+            return
+            
+        if len(context.args) != 1:
+            await update.message.reply_text("⚠️ Usage: /addadmin <user_id>")
+            return
+            
+        new_admin_id = context.args[0]
+        
+        try:
+            new_admin_id_int = int(new_admin_id)
+            if new_admin_id_int <= 0:
+                raise ValueError
+        except ValueError:
+            await update.message.reply_text("❌ Invalid user ID")
+            return
+            
+        admins = load_admins()
+        
+        if new_admin_id_int in admins:
+            await update.message.reply_text(f"❌ Already admin")
+            return
+            
+        admins.append(new_admin_id_int)
+        save_admins(admins)
+        
+        await update.message.reply_text(
+            f"✅ ADMIN ADDED\n"
+            f"User ID: {new_admin_id}\n"
+            f"Total: {len(admins)}\n"
+            f"Developer: @NEXO_247 & @NoobVellen"
+        )
+        logger.info(f"Admin {new_admin_id} added")
+        
+        try:
+            await context.application.bot.send_message(
+                chat_id=new_admin_id_int,
+                text=f"🎉 You are now admin!\nUse /help\nDeveloper: @NEXO_247 & @NoobVellen"
+            )
+        except Exception as e:
+            logger.error(f"Error notifying: {e}")
+        
+    except Exception as e:
+        logger.error(f"Error in add_admin: {e}")
+        await update.message.reply_text("❌ Error adding admin")
+
+async def remove_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        if not is_owner(update.effective_user.id):
+            await update.message.reply_text("❌ Only owner can remove admins")
+            return
+            
+        if len(context.args) != 1:
+            await update.message.reply_text("⚠️ Usage: /removeadmin <user_id>")
+            return
+            
+        remove_id = context.args[0]
+        
+        try:
+            remove_id_int = int(remove_id)
+            if remove_id_int <= 0:
+                raise ValueError
+        except ValueError:
+            await update.message.reply_text("❌ Invalid user ID")
+            return
+            
+        if remove_id_int == OWNER_ID:
+            await update.message.reply_text("❌ Cannot remove owner")
+            return
+            
+        admins = load_admins()
+        
+        if remove_id_int not in admins:
+            await update.message.reply_text(f"❌ Not an admin")
+            return
+            
+        admins.remove(remove_id_int)
+        save_admins(admins)
+        
+        await update.message.reply_text(
+            f"✅ ADMIN REMOVED\n"
+            f"User ID: {remove_id}\n"
+            f"Remaining: {len(admins)}\n"
+            f"Developer: @NEXO_247 & @NoobVellen"
+        )
+        logger.info(f"Admin {remove_id} removed")
+        
+        try:
+            await context.application.bot.send_message(
+                chat_id=remove_id_int,
+                text=f"⚠️ Admin removed\nDeveloper: @NEXO_247 & @NoobVellen"
+            )
+        except Exception as e:
+            logger.error(f"Error notifying: {e}")
+        
+    except Exception as e:
+        logger.error(f"Error in remove_admin: {e}")
+        await update.message.reply_text("❌ Error removing admin")
+
+async def admin_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        if not is_admin(update.effective_user.id):
+            return
+            
+        admins = load_admins()
+        
+        msg = "👑 BOT ADMINS\n\n"
+        
+        for i, admin_id in enumerate(admins, 1):
+            if admin_id == OWNER_ID:
+                msg += f"{i}. {admin_id} 👑 (Owner)\n"
+            else:
+                msg += f"{i}. {admin_id}\n"
+        
+        msg += f"\nTotal: {len(admins)}\nDeveloper: @NEXO_247 & @NoobVellen"
+        
+        await update.message.reply_text(msg)
+        
+    except Exception as e:
+        logger.error(f"Error in admin_list: {e}")
+        await update.message.reply_text("❌ Error fetching admins")
+
+async def send_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        if not is_admin(update.effective_user.id):
+            await update.message.reply_text("❌ Only admins")
+            return
+        
+        if not update.message.reply_to_message:
+            await update.message.reply_text("⚠️ Reply to message with: /sndmsg <group_id>")
+            return
+        
+        if len(context.args) != 1:
+            await update.message.reply_text("⚠️ Usage: /sndmsg <group_id>")
+            return
+        
+        group_id = context.args[0]
+        
+        try:
+            group_id_int = int(group_id)
+            if group_id_int >= 0:
+                await update.message.reply_text("❌ Group ID should be negative")
+                return
+        except ValueError:
+            await update.message.reply_text("❌ Invalid group ID")
+            return
+        
+        replied = update.message.reply_to_message
+        
+        try:
+            if replied.text:
+                await context.bot.send_message(chat_id=group_id_int, text=replied.text)
+            elif replied.photo:
+                await context.bot.send_photo(
+                    chat_id=group_id_int,
+                    photo=replied.photo[-1].file_id,
+                    caption=replied.caption
+                )
+            elif replied.video:
+                await context.bot.send_video(
+                    chat_id=group_id_int,
+                    video=replied.video.file_id,
+                    caption=replied.caption
+                )
+            elif replied.document:
+                await context.bot.send_document(
+                    chat_id=group_id_int,
+                    document=replied.document.file_id,
+                    caption=replied.caption
+                )
+            elif replied.audio:
+                await context.bot.send_audio(
+                    chat_id=group_id_int,
+                    audio=replied.audio.file_id,
+                    caption=replied.caption
+                )
+            elif replied.voice:
+                await context.bot.send_voice(
+                    chat_id=group_id_int,
+                    voice=replied.voice.file_id,
+                    caption=replied.caption
+                )
+            else:
+                await update.message.reply_text("❌ Message type not supported")
+                return
+            
+            await update.message.reply_text(f"✅ Sent to {group_id}\nDeveloper: @NEXO_247 & @NoobVellen")
+            logger.info(f"Message sent to {group_id}")
+            
+        except Exception as e:
+            error_msg = str(e)
+            if "not enough rights" in error_msg.lower():
+                await update.message.reply_text("❌ Bot not admin in group")
+            elif "chat not found" in error_msg.lower():
+                await update.message.reply_text("❌ Group not found")
+            else:
+                await update.message.reply_text(f"❌ Failed: {error_msg}")
+            logger.error(f"Error sending to {group_id}: {e}")
+        
+    except Exception as e:
+        logger.error(f"Error in send_message: {e}")
+        await update.message.reply_text("❌ Error processing")
+
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.error(f"Exception: {context.error}")
+
+def main():
+    try:
+        app = Application.builder().token(BOT_TOKEN).build()
+        
+        app.add_handler(CommandHandler("start", start))
+        app.add_handler(CommandHandler("help", help_cmd))
+        app.add_handler(CommandHandler("like", manual_like))
+        app.add_handler(CommandHandler("autolike", autolike))
+        app.add_handler(CommandHandler("myautolike", my_autolike))
+        app.add_handler(CommandHandler("extenduid", extend_uid))
+        app.add_handler(CommandHandler("remove_autolike", remove_autolike))
+        app.add_handler(CommandHandler("like_list", like_list))
+        app.add_handler(CommandHandler("force_like", force_like))
+        app.add_handler(CommandHandler("settime", settime))
+        app.add_handler(CommandHandler("addgroup", addgroup))
+        app.add_handler(CommandHandler("removegroup", removegroup))
+        app.add_handler(CommandHandler("grouplist", grouplist))
+        app.add_handler(CommandHandler("settings", settings))
+        app.add_handler(CommandHandler("toggle_user_notify", toggle_user_notify))
+        app.add_handler(CommandHandler("addadmin", add_admin))
+        app.add_handler(CommandHandler("removeadmin", remove_admin))
+        app.add_handler(CommandHandler("adminlist", admin_list))
+        app.add_handler(CommandHandler("sndmsg", send_message))
+        app.add_error_handler(error_handler)
+        
+        logger.info("🤖 Bot starting...")
+        logger.info(f"👑 Owner: {OWNER_ID}")
+        logger.info(f"🌍 Regions: {', '.join(VALID_REGIONS)}")
+        
+        async def post_init(application: Application) -> None:
+            scheduler.start()
+            setup_scheduler(application)
+            logger.info("✅ Scheduler active with APScheduler")
+        
+        app.post_init = post_init
+        app.run_polling(allowed_updates=Update.ALL_TYPES)
+        
+    except Exception as e:
+        logger.error(f"Failed to start: {e}")
+    finally:
+        if scheduler.running:
+            scheduler.shutdown()
+
+if __name__ == "__main__":
+    main()
