@@ -1,0 +1,37 @@
+#!/bin/bash
+# setup.sh
+
+echo "🚀 Setting up Telegram Bots Manager for Render..."
+
+# 1. Create directory structure
+mkdir -p telegram-bots-manager/{bots/{bot1,bot2,bot3},manager,scripts,logs,.github/workflows}
+
+# 2. Copy your existing bots
+echo "Copying your existing bots..."
+cp -r account/new1/* telegram-bots-manager/bots/bot1/
+cp -r account/new2/* telegram-bots-manager/bots/bot2/  
+cp -r account/new3/* telegram-bots-manager/bots/bot3/
+
+# 3. Create all config files
+echo "Creating configuration files..."
+
+# Create main.py
+cat > telegram-bots-manager/manager/main.py << 'EOF'
+# [Paste the main.py content from above]
+EOF
+
+# Create other files...
+
+echo "✅ Setup complete!"
+echo ""
+echo "📁 Next steps:"
+echo "1. cd telegram-bots-manager"
+echo "2. git init"
+echo "3. git add ."
+echo "4. git commit -m 'Initial commit'"
+echo "5. Create repo on GitHub: https://github.com/new"
+echo "6. git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPO.git"
+echo "7. git push -u origin main"
+echo "8. Go to https://render.com and connect your GitHub repo"
+echo "9. Add environment variables on Render dashboard"
+echo "10. Deploy! 🚀"
