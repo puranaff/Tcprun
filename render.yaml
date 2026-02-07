@@ -1,0 +1,14 @@
+# render.yaml
+services:
+  - type: web
+    name: telegram-bots-manager
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python manager/main.py
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: PYTHONUNBUFFERED
+        value: "true"
+    healthCheckPath: /health
+    autoDeploy: true
