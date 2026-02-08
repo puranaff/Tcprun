@@ -1,63 +1,9 @@
-# Telegram Bots Core
+# requirements_render.txt
 pyTelegramBotAPI==4.14.0
-telebot==0.0.5
-python-telegram-bot==20.7
-
-# Web Framework (for web dashboard)
 Flask==2.3.2
-Flask-CORS==4.0.0
-
-# HTTP Requests
 requests==2.31.0
-httpx==0.24.1
-aiohttp==3.9.1
-
-# Environment & Configuration
 python-dotenv==1.0.0
-pyyaml==6.0
-
-# Process Management
 psutil==5.9.5
-
-# Async & Concurrency
-asyncio==3.4.3
-concurrent-log-handler==0.9.24
-
-# Logging & Monitoring
-loguru==0.7.2
-colorlog==6.7.0
-
-# Utilities
-pytz==2023.3
-tzlocal==5.2
-
-# Database (optional)
-sqlite3
-
-# Crypto (for JWT bots)
 PyJWT==2.8.0
-cryptography==41.0.7
-pycryptodome==3.19.1
-
-# Protobuf (your bots ke liye)
 protobuf==4.25.1
-protobuf-decoder==0.1.2
-
-# Google APIs (agar chahiye to)
-google-api-python-client==2.104.0
-
-# Date/Time
-arrow==1.2.3
-
-# Terminal UI
-rich==13.7.0
-colorama==0.4.6
-termcolor==2.3.0
-
-# Testing
-pytest==7.4.3
-pytest-asyncio==0.21.1
-
-# Development
-black==23.11.0
-flake8==6.1.0
+pycryptodome==3.19.1
